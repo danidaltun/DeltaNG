@@ -1,0 +1,78 @@
+name: Build Delta from ZIP
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Unpack DeltaNG.zip over repo
+        run: |
+          set -e
+          if [ -f DeltaNG.zip ]; then
+            Z=DeltaNG.zip
+          elif [ -f DeltaNG_Ready.zip ]; then
+            Z=DeltaNG_Ready.zip
+          elif [ -f DeltaNG-master.zip ]; then
+            Z=DeltaNG-master.zip
+          else
+            echo "No DeltaNG zip found"; exit 1
+          fi
+          echo "Using $Z"
+          mkdir -p /tmp/delta_src
+          unzip -o "$Z" -d /tmp/delta_src
+          # if zip has a single root folder, enter it
+          ROOT=$(find /tmp/delta_src -maxdepth 2 -type d -name 'V2rayNG' | head -1)
+          if [ -n "$ROOT" ]; then
+            SRC=$(dirname "$ROOT")
+          else
+            SRC=/tmp/delta_src
+          fi
+          echo "SRC=$SRC"
+          cp -a "$SRC"/. .
+          ls -la
+          test -d V2rayNG
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-34 build-tools;34.0.0 platform-tools'
+
+      - name: Ensure libv2ray.aar
+        run: |
+          mkdir -p V2rayNG/app/libs
+          if [ ! -f V2rayNG/app/libs/libv2ray.aar ]; then
+            curl -fL "https://github.com/2dust/AndroidLibXrayLite/releases/latest/download/libv2ray.aar" \
+              -o V2rayNG/app/libs/libv2ray.aar
+          fi
+          ls -lh V2rayNG/app/libs/libv2ray.aar
+
+      - name: Build hev tun (if script exists)
+        run: |
+          if [ -f compile-hevtun.sh ]; then
+            chmod +x compile-hevtun.sh || true
+            # optional; ignore failure if ndk missing in this simplified flow
+            true
+          fi
+
+      - name: Gradle assemble
+        run: |
+          cd V2rayNG
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DeltaNG-APK
+          path: |
+            V2rayNG/app/build/outputs/apk/**/*.apk
+            V2rayNG/app/build/outputs/apk/**/*.apk.idsig
