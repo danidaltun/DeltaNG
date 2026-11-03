@@ -16,27 +16,39 @@ jobs:
           for f in DeltaNG.zip DeltaNG_Ready.zip DeltaNG-master.zip; do
             [ -f "$f" ] && Z="$f" && break
           done
-          [ -n "$Z" ] || { echo "zip not found"; exit 1; }
+          [ -n "$Z" ] || { echo "zip not found"; ls -la; exit 1; }
           echo "ZIP=$Z"
           rm -rf /tmp/d && mkdir /tmp/d
           unzip -o "$Z" -d /tmp/d
-          ROOT=$(find /tmp/d -maxdepth 3 -type d -name V2rayNG | head -1)
-          [ -n "$ROOT" ] || { echo "V2rayNG missing in zip"; find /tmp/d | head -50; exit 1; }
+          ROOT=$(find /tmp/d -maxdepth 4 -type d -name V2rayNG | head -1)
+          [ -n "$ROOT" ] || { echo "V2rayNG missing"; find /tmp/d | head -80; exit 1; }
           SRC=$(dirname "$ROOT")
           cp -a "$SRC"/. .
           test -d V2rayNG
+          ls -la V2rayNG | head
 
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: "17"
 
-      - uses: android-actions/setup-android@v3
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-34 build-tools;34.0.0"
+
+      - name: Accept SDK licenses
+        run: |
+          set +e
+          yes | sdkmanager --licenses >/dev/null 2>&1
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null 2>&1
+          exit 0
 
       - name: Get Xray AAR
         run: |
           mkdir -p V2rayNG/app/libs
-          curl -fL "https://github.com/2dust/AndroidLibXrayLite/releases/latest/download/libv2ray.aar" -o V2rayNG/app/libs/libv2ray.aar
+          curl -fL "https://github.com/2dust/AndroidLibXrayLite/releases/latest/download/libv2ray.aar" \
+            -o V2rayNG/app/libs/libv2ray.aar
           ls -lh V2rayNG/app/libs/libv2ray.aar
 
       - name: Assemble Release
@@ -44,9 +56,10 @@ jobs:
           cd V2rayNG
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
       - uses: actions/upload-artifact@v4
         with:
           name: DeltaNG-APK
           path: V2rayNG/app/build/outputs/apk/**/*.apk
+          if-no-files-found: warn
